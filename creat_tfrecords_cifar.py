@@ -1,0 +1,131 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "authorship_tag": "ABX9TyPVunanyDHwna6+Q+yVNfnt",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/5655530/TFX_CVModel_Project/blob/main/creat_tfrecords_cifar.py\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "jtkSm_U_aX0c"
+      },
+      "outputs": [],
+      "source": [
+        "import os\n",
+        "import argparse\n",
+        "import math\n",
+        "import numpy as np\n",
+        "import tensorflow as tf\n",
+        "import tqdm\n",
+        "\n",
+        "# CIFAR-10 데이터셋 로드\n",
+        "def load_cifar10():\n",
+        "    (train_ds, test_ds), ds_info = tfds.load(\n",
+        "        'cifar10',\n",
+        "        split=['train', 'test'],\n",
+        "        as_supervised=True,\n",
+        "        with_info=True\n",
+        "    )\n",
+        "    return train_ds, test_ds\n",
+        "\n",
+        "def process_image(image: np.ndarray, label: int) -> Tuple[tf.Tensor, tf.Tensor]:\n",
+        "    image = tf.convert_to_tensor(image)\n",
+        "    label = tf.convert_to_tensor(label, dtype=tf.int32)  # label is an integer\n",
+        "    return image, label\n",
+        "\n",
+        "def _int64_feature(value):\n",
+        "    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))\n",
+        "\n",
+        "def _float_feature(value):\n",
+        "    return tf.train.Feature(float_list=tf.train.FloatList(value=value))\n",
+        "\n",
+        "def create_tfrecord(image: np.ndarray, label: int):\n",
+        "    image = tf.convert_to_tensor(image)\n",
+        "    image_dims = image.shape\n",
+        "    image = tf.reshape(image, [-1])  # flatten to 1D array\n",
+        "\n",
+        "    return tf.train.Example(\n",
+        "        features=tf.train.Features(\n",
+        "            feature={\n",
+        "                \"image\": _float_feature(image.numpy()),\n",
+        "                \"image_shape\": _int64_feature(image_dims),\n",
+        "                \"label\": _int64_feature([label]),\n",
+        "            }\n",
+        "        )\n",
+        "    ).SerializeToString()\n",
+        "\n",
+        "def write_tfrecords(root_dir, images, labels, split, batch_size):\n",
+        "    print(f\"Preparing TFRecords for split: {split}.\")\n",
+        "\n",
+        "    dataset_size = len(images)\n",
+        "    for step in tqdm.tnrange(int(math.ceil(dataset_size / batch_size))):\n",
+        "        start_idx = step * batch_size\n",
+        "        end_idx = (step + 1) * batch_size\n",
+        "        shard_images = images[start_idx:end_idx]\n",
+        "        shard_labels = labels[start_idx:end_idx]\n",
+        "        shard_size = len(shard_images)\n",
+        "        filename = os.path.join(root_dir, \"{}-{:02d}-{}.tfrec\".format(split, step, shard_size))\n",
+        "\n",
+        "        with tf.io.TFRecordWriter(filename) as out_file:\n",
+        "            for i in range(shard_size):\n",
+        "                image = shard_images[i]\n",
+        "                label = shard_labels[i]\n",
+        "                example = create_tfrecord(image, label)\n",
+        "                out_file.write(example)\n",
+        "            print(\"Wrote file {} containing {} records\".format(filename, shard_size))\n",
+        "\n",
+        "def main(args):\n",
+        "    if not os.path.exists(args.root_tfrecord_dir):\n",
+        "        os.makedirs(args.root_tfrecord_dir, exist_ok=True)\n",
+        "\n",
+        "    write_tfrecords(args.root_tfrecord_dir, train_images, train_labels, \"train\", args.batch_size)\n",
+        "    write_tfrecords(args.root_tfrecord_dir, val_images, val_labels, \"val\", args.batch_size)\n",
+        "\n",
+        "def parse_args():\n",
+        "    parser = argparse.ArgumentParser()\n",
+        "    parser.add_argument(\n",
+        "        \"--root_tfrecord_dir\",\n",
+        "        help=\"Root directory where the TFRecord shards will be serialized.\",\n",
+        "        default=\"cifar10-tfrecords\",\n",
+        "        type=str,\n",
+        "    )\n",
+        "    parser.add_argument(\n",
+        "        \"--batch_size\",\n",
+        "        help=\"Number of samples to process in a batch before serializing a single TFRecord shard.\",\n",
+        "        default=32,\n",
+        "        type=int,\n",
+        "    )\n",
+        "\n",
+        "    args = parser.parse_args()\n",
+        "    return args\n",
+        "\n",
+        "if __name__ == \"__main__\":\n",
+        "    args = parse_args()\n",
+        "    main(args)"
+      ]
+    }
+  ]
+}
